@@ -85,6 +85,12 @@ func Load(path string) (Config, error) {
 	// Environment variable overrides
 	if v := os.Getenv("EDGEONE_API_LISTEN"); v != "" {
 		cfg.Listen = v
+	} else if v := os.Getenv("PORT"); v != "" {
+		// PaaS platforms (Zeabur / Railway / Fly / Heroku) inject the port to
+		// bind and route traffic to, and never expand a value we set ourselves,
+		// so honour $PORT directly.  ":N" binds every interface, which is what
+		// those platforms probe.
+		cfg.Listen = ":" + v
 	}
 	if v := os.Getenv("EDGEONE_API_KEY"); v != "" {
 		cfg.APIKey = v

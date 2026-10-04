@@ -23,6 +23,10 @@ func main() {
 	log.Printf("edgeone2api starting: listen=%s models=%v pool=[%d,%d] ttl=%dm bind_ttl=%dm max_req=%d upstream=%s agent_preset=%s",
 		cfg.Listen, cfg.Models, cfg.PoolMin, cfg.PoolMax, cfg.TTLMin, cfg.BindTTLMin, cfg.MaxReqPerSession, cfg.UpstreamURL, cfg.AgentPreset)
 
+	if cfg.APIKey == "" {
+		log.Printf("WARNING: api_key is empty — this service is UNPROTECTED. Anyone who can reach %s consumes the upstream. Set EDGEONE_API_KEY before exposing it on a public host.", cfg.Listen)
+	}
+
 	poolCfg := auth.PoolConfig{
 		MinSize:          cfg.PoolMin,
 		MaxSize:          cfg.PoolMax,

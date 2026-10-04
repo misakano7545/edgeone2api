@@ -182,48 +182,24 @@ func NewPool(cfg PoolConfig) *Pool {
 		exhaustedFP:       make(map[string]time.Time),
 		maxConcurrentWarm: 4,
 	}
-	// Eagerly create minimum sessions — concurrently bounded by
-	// maxConcurrentWarm.  Each session costs a full RPC round-trip
-	// (CreateSession → InitSession → first model reply, ~20-44s), so a
-	// serial loop would make startup block for minSize × that latency.
-	// A semaphore lets us saturate up to maxConcurrentWarm creations at once
-	// without hammering the upstream with unbounded parallel RPCs.
-	// A random stagger (jitter) before each create spreads the bursts in
-	// time so the upstream doesn't receive N session.create on the same
-	// instant, which trips its rate limiter even though the total count is
-	// the same (time-spreading ≫ concurrent burst).
-	if cfg.MinSize <= 1 {
-		if sess, err := pool.createSession(); err != nil {
-			log.Printf("pool init: create session: %v", err)
-		} else {
-			pool.free = append(pool.free, sess)
-		}
-	} else {
-		sem := make(chan struct{}, pool.maxConcurrentWarm)
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		var wg sync.WaitGroup
-		var mu sync.Mutex
+	// Warm the pool in the background.  Each session costs a full RPC
+	// round-trip (CreateSession → InitSession → first model reply, ~20-44s),
+	// so blocking here would hold the listener unbound past the ~30s window
+	// PaaS platforms (Zeabur-style TCP probes) allow.
+	//
+	// warm() is the shared creation path — maintain() and Acquire() use it
+	// too — and it self-caps at maxConcurrentWarm and appends under p.mu, so
+	// this needs no semaphore of its own and cannot race a second creator
+	// against the shared cap.  Calls are staggered because a burst of
+	// simultaneous session.create trips the upstream rate limiter.
+	go func() {
 		for i := 0; i < cfg.MinSize; i++ {
-			sem <- struct{}{} // block while already at concurrency cap
-			wg.Add(1)
-			go func(n int) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				// random stagger: spread creations across a window so
-				// concurrent creates don't all hit upstream at once.
-				time.Sleep(time.Duration(rng.Intn(5000)) * time.Millisecond)
-				sess, err := pool.createSession()
-				if err != nil {
-					log.Printf("pool init: create session %d/%d: %v", n+1, cfg.MinSize, err)
-					return
-				}
-				mu.Lock()
-				pool.free = append(pool.free, sess)
-				mu.Unlock()
-			}(i)
+			pool.warm()
+			if i < cfg.MinSize-1 {
+				time.Sleep(time.Duration(rand.Intn(5000)) * time.Millisecond)
+			}
 		}
-		wg.Wait()
-	}
+	}()
 	// Start maintenance goroutine
 	go pool.maintain()
 	return pool
