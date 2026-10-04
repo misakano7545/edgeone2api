@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -121,5 +122,31 @@ func TestBuildDirectiveWithToolsKeepsProtocol(t *testing.T) {
 	}
 	if strings.Contains(d, "NEVER emit tool calls") {
 		t.Fatalf("tools directive must enable the tool protocol, not forbid it:\n%s", d)
+	}
+}
+
+// The retry-without-effort path in the server hinges on recognising this exact
+// upstream rejection.  Pin it to the real message so a reword upstream surfaces
+// here instead of silently reintroducing "ask for kimi, get deepseek".
+func TestIsUnsupportedReasoningEffort(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"real upstream rejection",
+			errors.New(`session.selectModel failed: provider "edgeone-makers" model "@makers/kimi-k2.6" does not support reasoning effort "off"`), true},
+		{"nil", nil, false},
+		{"session gone (must not be swallowed here)",
+			errors.New(`session.selectModel failed: session "session-1" not found`), false},
+		{"transient network error",
+			errors.New(`session.selectModel: status 502`), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsUnsupportedReasoningEffort(c.err); got != c.want {
+				t.Errorf("IsUnsupportedReasoningEffort(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
 	}
 }

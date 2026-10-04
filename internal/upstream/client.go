@@ -831,3 +831,15 @@ func IsSessionNotFound(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
+
+// IsUnsupportedReasoningEffort reports whether the upstream refused the model
+// switch because the requested reasoning effort does not apply to that model
+// (kimi / hy3 / minimax expose no reasoning knob and reject any value,
+// including "off").  Callers should retry the switch with no effort rather
+// than leave the session on its previous model.
+func IsUnsupportedReasoningEffort(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "does not support reasoning effort")
+}

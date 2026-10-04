@@ -328,6 +328,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 			err = session.Client.SelectModel(ctx, session.SessionID, session.ConversationID, mm.Provider, mm.Model, re)
 		}
+		if err != nil && upstream.IsUnsupportedReasoningEffort(err) {
+			// Models with no reasoning knob (kimi / hy3 / minimax) reject every
+			// effort value, "off" included, because the parameter simply does not
+			// apply to them.  Retry without it so the switch actually lands:
+			// otherwise SelectedModel is never set, the session stays on its
+			// previous model, and the caller silently gets a model they never
+			// asked for (ask for kimi, get answered by deepseek-v4-flash).
+			log.Printf("[SELECTMODEL] %s: model has no reasoning support upstream, retrying without effort: %v", selKey, err)
+			re = ""
+			selKey = mm.Provider + "/" + mm.Model + "/" + re
+			err = session.Client.SelectModel(ctx, session.SessionID, session.ConversationID, mm.Provider, mm.Model, re)
+		}
 		if err != nil {
 			log.Printf("[SELECTMODEL] %s: %v", selKey, err)
 		} else {
