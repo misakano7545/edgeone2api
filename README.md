@@ -13,6 +13,11 @@
   <img alt="License" src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square">
 </p>
 
+<p align="center">
+  <!-- Deploy Button 绑定 Zeabur 模板：在 Dashboard 账户页 Template 生成后，把下面的链接换成 https://zeabur.com/templates/<ID> -->
+  <a href="https://zeabur.com/"><img alt="Deploy with Zeabur" src="https://zeabur.com/button.svg"></a>
+</p>
+
 ---
 
 ## 项目简介
@@ -268,6 +273,27 @@ docker run -d --name edgeone2api --network host \
 ```
 
 或 `docker compose up -d --build`（端口映射与配置见 `docker-compose.yml`）。
+
+### Zeabur（PaaS）
+
+仓库根目录的 `Dockerfile` 就是构建入口，Zeabur 自动识别，**无需额外构建配置**（`zbpack.json` 之类不必要）。
+
+1. 新建项目 → **Deploy New Service → GitHub**，选择本仓库（首次需授权 GitHub）
+2. 在服务页 **Environment Variables** 填下表变量
+3. 用分配的域名访问 `/healthz` 验证
+
+| 变量 | 建议值 | 说明 |
+|---|---|---|
+| `EDGEONE_API_KEY` | 强口令 | **必设**。为空则服务不鉴权，公网可被任意调用，启动日志会打 `WARNING: api_key is empty` |
+| `EDGEONE_API_POOL_MIN` | `2` | 小规格实例别用默认 `4` |
+| `EDGEONE_API_POOL_MAX` | `8` | 每个会话绑一个浏览器指纹，上限越高越易触发上游限流 |
+| `EDGEONE_API_DEFAULT_REASONING_EFFORT` | 留空 | 留空即不主动传 `reasoning_effort`。上游对不支持推理的模型（hy3 / minimax / kimi）会拒绝任何 effort 值 |
+
+其余变量见[环境变量覆盖](#环境变量覆盖)。
+
+**端口**：Zeabur 注入 `PORT` 并把流量路由到该端口，服务直接绑定它（`:PORT`，监听所有网卡）。显式设置 `EDGEONE_API_LISTEN` 时以它为准。
+
+**健康检查**：Zeabur 默认对端口做 TCP 探活（10s 间隔、连续 3 次失败）。服务**毫秒级**完成端口绑定、会话池在后台预热，探活立即通过，期间 `/healthz` 也立即可用。预热完成前到达的请求会等待会话就绪（`Acquire` 轮询），不会返回错误。
 
 ### 验证脚本
 
